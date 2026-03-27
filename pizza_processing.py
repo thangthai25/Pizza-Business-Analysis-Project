@@ -50,6 +50,11 @@ def get_cleaned_data():
         df['day_name'] = pd.Categorical(df['day_name'], categories=days_order, ordered=True)
         
         print(f"✅ Đã dọn dẹp xong {len(df)} dòng dữ liệu.")
+
+        df['revenue'] = df['revenue'] * 25000
+        # -----------------------------------------------------------
+        
+        print(f"✅ Đã dọn dẹp xong {len(df)} dòng dữ liệu.")
         return df
         
     except Exception as e:

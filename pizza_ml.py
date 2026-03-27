@@ -16,64 +16,58 @@ def run_market_basket_analysis(df):
     print("\n" + "="*50)
     print("--- [1. MARKET BASKET ANALYSIS (APRIORI)] ---")
     
-    # Kiểm tra xem cột order_id có tồn tại không để tránh lỗi KeyError
     if 'order_id' not in df.columns:
-        print("❌ Lỗi: Không tìm thấy cột 'order_id'. Vui lòng chạy lại file SQL View để cập nhật dữ liệu.")
+        print("❌ Lỗi: Không tìm thấy cột 'order_id'.")
         return pd.DataFrame()
 
-    # Chuẩn bị dữ liệu dạng Basket (Giỏ hàng)
+    # Chuẩn bị dữ liệu dạng Basket
     basket = (df.groupby(['order_id', 'pizza_name'])['quantity']
               .sum().unstack().reset_index().fillna(0)
               .set_index('order_id'))
     
-    # Chuyển đổi sang dạng One-Hot Encoding (0 hoặc 1)
-    def encode_units(x):
-        return 1 if x >= 1 else 0
+    basket_sets = basket.map(lambda x: 1 if x >= 1 else 0)
     
-    # FIX LỖI: Sử dụng .map() thay vì .applymap() cho Pandas phiên bản mới (Python 3.13)
-    basket_sets = basket.map(encode_units)
-    
-    # Chạy thuật toán Apriori với min_support = 1%
+    # Chạy thuật toán Apriori
     frequent_itemsets = apriori(basket_sets, min_support=0.01, use_colnames=True)
     
     if frequent_itemsets.empty:
-        print("⚠️ Không tìm thấy tập phổ biến nào với min_support hiện tại.")
         return pd.DataFrame()
 
-    # Tạo luật kết hợp (Association Rules)
+    # Tạo luật kết hợp
     rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1)
-    
-    # Sắp xếp theo độ tin cậy (Confidence) và sức mạnh liên kết (Lift)
     rules = rules.sort_values(by=['lift', 'confidence'], ascending=False)
     
-    print(f"✅ Đã tìm thấy {len(rules)} quy luật kết hợp.")
+    print(f"✅ Tìm thấy {len(rules)} quy luật kết hợp.")
     return rules
 
-def run_time_series_forecasting(df, target='orders'):
+def run_time_series_forecasting(df, target='revenue'):
     """
-    Áp dụng Time Series Forecasting (Dùng Random Forest Regressor)
-    Mục tiêu: Dự báo số lượng đơn hàng hoặc Doanh thu theo ngày/giờ.
+    Áp dụng Time Series Forecasting (Random Forest) với Feature Engineering nâng cao.
+    Mục tiêu: Dự báo doanh thu/đơn hàng và phân tích các yếu tố ảnh hưởng.
     """
-    label = "ĐƠN HÀNG" if target == 'orders' else "DOANH THU"
-    print(f"\n--- [2. TIME SERIES FORECASTING - DỰ BÁO {label}] ---")
+    label = "DOANH THU (VNĐ)" if target == 'revenue' else "ĐƠN HÀNG"
+    print(f"\n--- [2. DỰ BÁO {label} & PHÂN TÍCH ĐẶC TRƯNG] ---")
     
     # 1. Gom nhóm dữ liệu theo Ngày và Giờ
-    if target == 'orders':
-        # Dự báo số lượng đơn hàng (Dựa trên unique order_id)
-        data_group = df.groupby(['date', 'hour']).agg({'order_id': 'nunique'}).reset_index()
-        data_group.columns = ['date', 'hour', 'y']
-    else:
-        # Dự báo doanh thu (Dựa trên cột revenue)
+    if target == 'revenue':
         data_group = df.groupby(['date', 'hour']).agg({'revenue': 'sum'}).reset_index()
-        data_group.columns = ['date', 'hour', 'y']
+    else:
+        data_group = df.groupby(['date', 'hour']).agg({'order_id': 'nunique'}).reset_index()
     
-    # 2. Tạo Features (Đặc trưng thời gian)
+    data_group.columns = ['date', 'hour', 'y']
+    data_group = data_group.sort_values(['date', 'hour'])
+
+    # 2. FEATURE ENGINEERING
     data_group['day_of_week'] = data_group['date'].dt.dayofweek
     data_group['month'] = data_group['date'].dt.month
     data_group['is_weekend'] = data_group['day_of_week'].apply(lambda x: 1 if x >= 5 else 0)
     
-    # 3. Chia dữ liệu Train/Test
-    X = data_group[['hour', 'day_of_week', 'month', 'is_weekend']]
+    # Thêm biến trễ (Lag Features): Doanh thu/Đơn hàng của 1 giờ trước đó
+    data_group['lag_1h'] = data_group['y'].shift(1).fillna(data_group['y'].median())
+    
+    # 3. Chia dữ liệu
+    features = ['hour', 'day_of_week', 'month', 'is_weekend', 'lag_1h']
+    X = data_group[features]
     y = data_group['y']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
@@ -86,43 +80,46 @@ def run_time_series_forecasting(df, target='orders'):
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
     
-    print(f"✅ Mô hình dự báo {label} hoàn tất.")
-    print(f"   - Sai số trung bình (MAE): {mae:.2f}")
-    print(f"   - Độ phù hợp (R2 Score): {r2:.2f}")
+    # 6. Tính toán Tầm quan trọng của đặc trưng
+    importance_df = pd.DataFrame({
+        'Yếu tố': features,
+        'Mức độ ảnh hưởng (%)': model.feature_importances_ * 100
+    }).sort_values(by='Mức độ ảnh hưởng (%)', ascending=False)
     
-    return model
+    print(f"✅ Mô hình {label} hoàn tất. Độ phù hợp (R2): {r2:.2f}")
+    if target == 'revenue':
+        print(f"   - Sai số trung bình (MAE): {mae:,.0f} VNĐ")
+    
+    return model, importance_df
 
 if __name__ == "__main__":
-    # Lấy dữ liệu sạch từ file processing
+    # Lấy dữ liệu sạch (Đã nhân tỷ giá 25.000 từ file processing)
     data = get_cleaned_data()
     
     if data is not None:
-        # --- NHIỆM VỤ 1 & 4: APRIORI & COMBO GỢI Ý ---
+        # NHIỆM VỤ 1: LUẬT KẾT HỢP (COMBO)
         rules = run_market_basket_analysis(data)
-        
         if not rules.empty:
-            print("\n🔥 GỢI Ý COMBO (Top 5 cặp liên quan nhất):")
-            for idx, row in rules.head(5).iterrows():
-                items_a = ', '.join(list(row['antecedents']))
-                items_b = ', '.join(list(row['consequents']))
-                print(f"👉 Nếu khách mua [{items_a}] -> Khả năng cao sẽ mua [{items_b}]")
-                print(f"   (Độ tin cậy: {row['confidence']*100:.1f}% | Lift: {row['lift']:.2f})")
-            
-        #  NHIỆM VỤ 2: DỰ BÁO ĐƠN HÀNG (SỐ LƯỢNG) 
-        order_model = run_time_series_forecasting(data, target='orders')
+            print("\n🔥 TOP 3 COMBO GỢI Ý MẠNH NHẤT:")
+            for _, row in rules.head(3).iterrows():
+                print(f"👉 Mua [{', '.join(list(row['antecedents']))}] -> Thường mua [{', '.join(list(row['consequents']))}]")
+
+        # NHIỆM VỤ 2: DỰ BÁO DOANH THU & PHÂN TÍCH ẢNH HƯỞNG
+        rev_model, importance = run_time_series_forecasting(data, target='revenue')
         
-        #  NHIỆM VỤ 3: DỰ BÁO DOANH THU (TIỀN) 
-        revenue_model = run_time_series_forecasting(data, target='revenue')
+        print("\n📊 CÁC YẾU TỐ QUYẾT ĐỊNH DOANH THU:")
+        print(importance.to_string(index=False))
+
+        # DEMO DỰ BÁO KỊCH BẢN
+        # 19h tối Thứ 7, tháng 12, Weekend=1, 
+        # Giả sử doanh thu 1h trước (lag_1h) là 5.000.000 VNĐ (đã đổi sang VNĐ)
+        lag_val_demo = 5000000 
+        sample_input = pd.DataFrame([[19, 5, 12, 1, lag_val_demo]], 
+                                    columns=['hour', 'day_of_week', 'month', 'is_weekend', 'lag_1h'])
         
-        #  DEMO DỰ BÁO CHO NGÀY MAI 
-        # Giả sử: 19h (Giờ cao điểm tối), Thứ 7 (Day 5), Tháng 12, Weekend=1
-        sample_input = pd.DataFrame([[19, 5, 12, 1]], columns=['hour', 'day_of_week', 'month', 'is_weekend'])
+        prediction = rev_model.predict(sample_input)[0]
         
-        pred_orders = order_model.predict(sample_input)[0]
-        pred_revenue = revenue_model.predict(sample_input)[0]
-        
-        print("\n" + "="*50)
-        print("🔮 KẾT QUẢ DỰ BÁO KỊCH BẢN (19h Tối Thứ 7 - Tháng 12):")
-        print(f"📈 Dự kiến số đơn hàng: {int(pred_orders)} đơn")
-        print(f"💰 Dự kiến doanh thu: ${pred_revenue:,.2f}")
-        print("="*50)
+        print("\n" + "="*60)
+        print(f"🔮 DỰ BÁO KỊCH BẢN (19h Tối Thứ 7 - Tháng 12):")
+        print(f"💰 Doanh thu dự kiến: {prediction:,.0f} VNĐ")
+        print("="*60)
