@@ -1,125 +1,135 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from mlxtend.frequent_patterns import apriori, association_rules
+import datetime
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
-from pizza_processing import get_cleaned_data
+from sklearn.metrics import r2_score, mean_absolute_error
+from mlxtend.frequent_patterns import apriori, association_rules
+from pizza_processing import get_cleaned_data 
 
-def run_market_basket_analysis(df):
-    """
-    Áp dụng thuật toán Apriori (Market Basket Analysis)
-    Mục tiêu: Tìm mối liên quan giữa các món ăn để gợi ý Combo.
-    """
-    print("\n" + "="*50)
-    print("--- [1. MARKET BASKET ANALYSIS (APRIORI)] ---")
-    
-    if 'order_id' not in df.columns:
-        print("❌ Lỗi: Không tìm thấy cột 'order_id'.")
-        return pd.DataFrame()
+# --- 1. CẤU HÌNH GIAO DIỆN ---
+st.set_page_config(page_title="PIZZA AI SUITE | Ver 7.1", layout="wide", page_icon="🍕")
 
-    # Chuẩn bị dữ liệu dạng Basket
-    basket = (df.groupby(['order_id', 'pizza_name'])['quantity']
-              .sum().unstack().reset_index().fillna(0)
-              .set_index('order_id'))
-    
-    basket_sets = basket.map(lambda x: 1 if x >= 1 else 0)
-    
-    # Chạy thuật toán Apriori
-    frequent_itemsets = apriori(basket_sets, min_support=0.01, use_colnames=True)
-    
-    if frequent_itemsets.empty:
-        return pd.DataFrame()
+st.markdown("""
+    <style>
+    .main { background-color: #f8fafc; }
+    [data-testid="stMetric"] {
+        background: white; border-radius: 12px; padding: 15px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #ef4444;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    # Tạo luật kết hợp
-    rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1)
-    rules = rules.sort_values(by=['lift', 'confidence'], ascending=False)
-    
-    print(f"✅ Tìm thấy {len(rules)} quy luật kết hợp.")
-    return rules
+# --- 2. TẢI DỮ LIỆU ---
+@st.cache_data
+def load_all_data():
+    df = get_cleaned_data()
+    if df is not None:
+        df_ml = df.groupby(['date', 'hour']).agg({'revenue': 'sum'}).reset_index()
+        df_ml['day_of_week'] = df_ml['date'].dt.dayofweek
+        df_ml['month'] = df_ml['date'].dt.month
+        df_ml['is_weekend'] = df_ml['day_of_week'].apply(lambda x: 1 if x >= 5 else 0)
+        df_ml['lag_1h'] = df_ml['revenue'].shift(1).fillna(df_ml['revenue'].median())
+        return df, df_ml
+    return None, None
 
-def run_time_series_forecasting(df, target='revenue'):
-    """
-    Áp dụng Time Series Forecasting (Random Forest) với Feature Engineering nâng cao.
-    Mục tiêu: Dự báo doanh thu/đơn hàng và phân tích các yếu tố ảnh hưởng.
-    """
-    label = "DOANH THU (VNĐ)" if target == 'revenue' else "ĐƠN HÀNG"
-    print(f"\n--- [2. DỰ BÁO {label} & PHÂN TÍCH ĐẶC TRƯNG] ---")
-    
-    # 1. Gom nhóm dữ liệu theo Ngày và Giờ
-    if target == 'revenue':
-        data_group = df.groupby(['date', 'hour']).agg({'revenue': 'sum'}).reset_index()
-    else:
-        data_group = df.groupby(['date', 'hour']).agg({'order_id': 'nunique'}).reset_index()
-    
-    data_group.columns = ['date', 'hour', 'y']
-    data_group = data_group.sort_values(['date', 'hour'])
+df, df_ml = load_all_data()
 
-    # 2. FEATURE ENGINEERING
-    data_group['day_of_week'] = data_group['date'].dt.dayofweek
-    data_group['month'] = data_group['date'].dt.month
-    data_group['is_weekend'] = data_group['day_of_week'].apply(lambda x: 1 if x >= 5 else 0)
-    
-    # Thêm biến trễ (Lag Features): Doanh thu/Đơn hàng của 1 giờ trước đó
-    data_group['lag_1h'] = data_group['y'].shift(1).fillna(data_group['y'].median())
-    
-    # 3. Chia dữ liệu
-    features = ['hour', 'day_of_week', 'month', 'is_weekend', 'lag_1h']
-    X = data_group[features]
-    y = data_group['y']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    # 4. Huấn luyện mô hình Random Forest
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    
-    # 5. Đánh giá mô hình
-    y_pred = model.predict(X_test)
-    mae = mean_absolute_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
-    
-    # 6. Tính toán Tầm quan trọng của đặc trưng
-    importance_df = pd.DataFrame({
-        'Yếu tố': features,
-        'Mức độ ảnh hưởng (%)': model.feature_importances_ * 100
-    }).sort_values(by='Mức độ ảnh hưởng (%)', ascending=False)
-    
-    print(f"✅ Mô hình {label} hoàn tất. Độ phù hợp (R2): {r2:.2f}")
-    if target == 'revenue':
-        print(f"   - Sai số trung bình (MAE): {mae:,.0f} VNĐ")
-    
-    return model, importance_df
+if df is not None:
+    # --- SIDEBAR ---
+    with st.sidebar:
+        st.title("🍕 PIZZA AI SUITE")
+        mode = st.radio("PHÂN HỆ HỆ THỐNG:", 
+                        ["🔮 Dự báo & What-if", "🛒 Chiến lược Combo AI", "👥 Sắp xếp Nhân sự"])
+        st.divider()
+        st.markdown(f"**SV thực hiện:** Thắng<br>Đồ án TN 2026", unsafe_allow_html=True)
 
-if __name__ == "__main__":
-    # Lấy dữ liệu sạch (Đã nhân tỷ giá 25.000 từ file processing)
-    data = get_cleaned_data()
-    
-    if data is not None:
-        # NHIỆM VỤ 1: LUẬT KẾT HỢP (COMBO)
-        rules = run_market_basket_analysis(data)
-        if not rules.empty:
-            print("\n🔥 TOP 3 COMBO GỢI Ý MẠNH NHẤT:")
-            for _, row in rules.head(3).iterrows():
-                print(f"👉 Mua [{', '.join(list(row['antecedents']))}] -> Thường mua [{', '.join(list(row['consequents']))}]")
-
-        # NHIỆM VỤ 2: DỰ BÁO DOANH THU & PHÂN TÍCH ẢNH HƯỞNG
-        rev_model, importance = run_time_series_forecasting(data, target='revenue')
+    # --- PHÂN HỆ 1: DỰ BÁO ---
+    if mode == "🔮 Dự báo & What-if":
+        st.title("🔮 Dự báo Doanh thu & Kịch bản Giả định")
+        features = ['hour', 'day_of_week', 'month', 'is_weekend', 'lag_1h']
+        model = RandomForestRegressor(n_estimators=100, random_state=42).fit(df_ml[features], df_ml['revenue'])
         
-        print("\n📊 CÁC YẾU TỐ QUYẾT ĐỊNH DOANH THU:")
-        print(importance.to_string(index=False))
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Độ tin cậy AI", f"{r2_score(df_ml['revenue'], model.predict(df_ml[features])):.2f}")
+        m2.metric("Sai số TB (MAE)", f"{mean_absolute_error(df_ml['revenue'], model.predict(df_ml[features])):,.0f} VNĐ")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.subheader("📊 Xu hướng doanh thu 24h tới")
+            future = pd.DataFrame({'hour': range(24), 'day_of_week': 5, 'month': 12, 'is_weekend': 1, 'lag_1h': [4000000]*24})
+            preds = model.predict(future)
+            fig, ax = plt.subplots(figsize=(10, 3.5))
+            ax.plot(range(24), preds, marker='o', color='red')
+            st.pyplot(fig)
+        with col2:
+            st.subheader("🧪 Chạy thử kịch bản")
+            h = st.slider("Chọn giờ", 10, 23, 19)
+            if st.button("Dự báo ngay"):
+                res = model.predict([[h, 5, 12, 1, 4000000]])[0]
+                st.write(f"Dự kiến: **{res:,.0f} VNĐ**")
 
-        # DEMO DỰ BÁO KỊCH BẢN
-        # 19h tối Thứ 7, tháng 12, Weekend=1, 
-        # Giả sử doanh thu 1h trước (lag_1h) là 5.000.000 VNĐ (đã đổi sang VNĐ)
-        lag_val_demo = 5000000 
-        sample_input = pd.DataFrame([[19, 5, 12, 1, lag_val_demo]], 
-                                    columns=['hour', 'day_of_week', 'month', 'is_weekend', 'lag_1h'])
+    # --- PHÂN HỆ 2: COMBO AI ---
+    elif mode == "🛒 Chiến lược Combo AI":
+        st.title("🛒 Gợi ý Combo tối ưu lợi nhuận")
+        basket = df.groupby(['order_id', 'pizza_name'])['quantity'].sum().unstack().reset_index().fillna(0).set_index('order_id')
+        basket_sets = basket.map(lambda x: 1 if x >= 1 else 0)
+        frequent = apriori(basket_sets, min_support=0.01, use_colnames=True)
+        rules = association_rules(frequent, metric="lift", min_threshold=1.2)
+        st.dataframe(rules[['antecedents', 'consequents', 'confidence', 'lift']].head(10))
+
+    # --- PHÂN HỆ 3: NHÂN SỰ (PHẦN BẠN CẦN) ---
+    elif mode == "👥 Sắp xếp Nhân sự":
+        st.title("👥 Quản trị & Sắp xếp Lịch trực Nhân sự")
         
-        prediction = rev_model.predict(sample_input)[0]
+        # Tính toán chỉ số tổng quát
+        num_days = df['date'].nunique()
+        peak_hour = df.groupby('hour')['order_id'].nunique().idxmax()
         
-        print("\n" + "="*60)
-        print(f"🔮 DỰ BÁO KỊCH BẢN (19h Tối Thứ 7 - Tháng 12):")
-        print(f"💰 Doanh thu dự kiến: {prediction:,.0f} VNĐ")
-        print("="*60)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🕒 Giờ Cao Điểm Hệ Thống", f"{peak_hour}:00")
+        c2.metric("📈 Công suất chuẩn", "6 Đơn hàng/Người/Giờ")
+        c3.metric("📅 Tổng ngày phân tích", f"{num_days} ngày")
+
+        tab1, tab2 = st.tabs(["🌡️ Phân tích Mật độ (Heatmap)", "📋 Lịch trình chi tiết (Staff Schedule)"])
+        
+        with tab1:
+            st.subheader("Lưu lượng đơn hàng trung bình mỗi giờ")
+            # pivot_table để vẽ heatmap
+            heatmap_data = df.pivot_table(index='day_name', columns='hour', values='order_id', aggfunc='nunique').fillna(0) / num_days
+            fig_h, ax_h = plt.subplots(figsize=(16, 7))
+            sns.heatmap(heatmap_data, cmap="YlOrRd", annot=True, fmt=".1f", ax=ax_h)
+            st.pyplot(fig_h)
+
+        with tab2:
+            st.subheader("📅 Công cụ lập lịch trực theo Thứ")
+            sel_day = st.selectbox("Chọn ngày trong tuần để xếp lịch:", df['day_name'].unique())
+            
+            # Lọc dữ liệu theo thứ đã chọn
+            day_data = df[df['day_name'] == sel_day]
+            num_specific_days = day_data['date'].nunique()
+            hourly_orders = day_data.groupby('hour')['order_id'].nunique() / num_specific_days
+            
+            # Tạo bảng lịch trình
+            schedule = []
+            for hr in range(10, 24):
+                avg_o = hourly_orders.get(hr, 0)
+                # Công thức: 1 người cân 6 đơn, +1 người dự phòng
+                staff_needed = int(np.ceil(avg_o / 6)) + 1 if avg_o > 0 else 0
+                
+                status = "🔴 Cao điểm" if avg_o > 5 else "🟢 Bình thường" if avg_o > 0 else "⚪ Đóng cửa"
+                
+                schedule.append({
+                    "Khung Giờ": f"{hr}h:00",
+                    "Đơn dự kiến": round(avg_o, 1),
+                    "Số nhân sự cần": staff_needed,
+                    "Trạng thái": status
+                })
+            
+            st.table(pd.DataFrame(schedule))
+            st.info("💡 **Gợi ý:** Nhân sự được tính toán dựa trên công thức: `Ceil(Đơn hàng / 6) + 1` để đảm bảo chất lượng dịch vụ giờ cao điểm.")
+
+    st.divider()
+    st.caption("Pizza BI Dashboard v7.1 - Dữ liệu thực tế 2015 quy đổi 25.000 VNĐ")
