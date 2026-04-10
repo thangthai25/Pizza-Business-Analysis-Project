@@ -47,14 +47,22 @@ def get_cleaned_data():
         
         # Sắp xếp thứ tự thứ trong tuần
         days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+       # ... (giữ nguyên phần trên) ...
+        
         df['day_name'] = pd.Categorical(df['day_name'], categories=days_order, ordered=True)
-        
-        print(f"✅ Đã dọn dẹp xong {len(df)} dòng dữ liệu.")
 
-        df['revenue'] = df['revenue'] * 25000
-        # -----------------------------------------------------------
+        # --- TÍNH TOÁN NHÂN SỰ ĐỒNG BỘ TẠI ĐÂY ---
+        # Đếm số đơn hàng duy nhất (order_id) theo từng giờ
+        hourly_orders = df.groupby('hour')['order_id'].nunique().to_dict()
         
-        print(f"✅ Đã dọn dẹp xong {len(df)} dòng dữ liệu.")
+        # Công thức: Cứ 10 đơn hàng/giờ cần 1 nhân viên (tối thiểu 2 người/ca)
+        # Việc tính ở đây giúp mốc 12h (từ 12:00:00 - 12:59:59) luôn chính xác
+        df['staff_suggested'] = df['hour'].map(lambda x: max(2, hourly_orders.get(x, 0) // 10))
+        
+        # Quy đổi doanh thu sang VNĐ
+        df['revenue'] = df['revenue'] * 25000
+        
+        print(f"✅ Đã chốt số liệu nhân sự và quy đổi doanh thu.")
         return df
         
     except Exception as e:
