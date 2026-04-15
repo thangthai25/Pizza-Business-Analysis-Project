@@ -4,73 +4,62 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-def get_cleaned_data():
-    """Hàm tổng hợp: Kết nối -> Lấy dữ liệu -> Làm sạch"""
-    
-    # 1. Kết nối SQL Server
+def get_sql_connection():
     conn_str = (
         'Driver={SQL Server};'
-        'Server=.;'
-        'Database=PizzaProject;'
+        'Server=.;' 
+        'Database=PizzaProject;' 
         'Trusted_Connection=yes;'
     )
-    
-    try:
-        conn = pyodbc.connect(conn_str)
-        print("✅ Kết nối SQL Server thành công!")
-        
-        # 2. Lấy dữ liệu từ View
-        raw_df = pd.read_sql("SELECT * FROM Pizza_Master_Data", conn)
-        conn.close()
-        
-        # 3. Làm sạch dữ liệu
-        df = raw_df.copy()
-        
-        # Xử lý giá trị thiếu & trùng lặp
-        df = df.dropna().drop_duplicates()
-        
-        # Chuẩn hóa thời gian
-        df['date'] = pd.to_datetime(df['date'])
-        
-        # --- PHẦN CHỈNH SỬA ĐỊNH DẠNG TIME TẠI ĐÂY ---
-        # Chuyển đổi sang datetime tạm thời để xử lý
-        time_temp = pd.to_datetime(df['time'])
-        
-        # 1. Lấy giờ (dạng số) để vẽ biểu đồ và làm ML
-        df['hour'] = time_temp.dt.hour
-        
-        # 2. Định dạng lại cột time thành chuỗi sạch HH:MM:SS (Xóa bỏ .0000000)
-        df['time'] = time_temp.dt.strftime('%H:%M:%S')
-        # ---------------------------------------------
-        
-        df['day_name'] = df['date'].dt.day_name()
-        
-        # Sắp xếp thứ tự thứ trong tuần
-        days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-       # ... (giữ nguyên phần trên) ...
-        
-        df['day_name'] = pd.Categorical(df['day_name'], categories=days_order, ordered=True)
+    return pyodbc.connect(conn_str)
 
-        # --- TÍNH TOÁN NHÂN SỰ ĐỒNG BỘ TẠI ĐÂY ---
-        # Đếm số đơn hàng duy nhất (order_id) theo từng giờ
-        hourly_orders = df.groupby('hour')['order_id'].nunique().to_dict()
+def get_cleaned_data():
+    try:
+        conn = get_sql_connection()
         
-        # Công thức: Cứ 10 đơn hàng/giờ cần 1 nhân viên (tối thiểu 2 người/ca)
-        # Việc tính ở đây giúp mốc 12h (từ 12:00:00 - 12:59:59) luôn chính xác
-        df['staff_suggested'] = df['hour'].map(lambda x: max(2, hourly_orders.get(x, 0) // 10))
+        # 1. Lấy 4 bảng gốc (Thêm pizza_types)
+        orders = pd.read_sql("SELECT * FROM orders", conn)
+        order_details = pd.read_sql("SELECT * FROM order_details", conn)
+        pizzas = pd.read_sql("SELECT * FROM pizzas", conn)
+        pizza_types = pd.read_sql("SELECT * FROM pizza_types", conn) # <-- QUAN TRỌNG
         
-        # Quy đổi doanh thu sang VNĐ
-        df['revenue'] = df['revenue'] * 25000
+        # 2. Lấy 5 bảng vận hành
+        staff = pd.read_sql("SELECT * FROM staff", conn)
+        shift_log = pd.read_sql("SELECT * FROM shift_logs", conn)
+        fixed_costs = pd.read_sql("SELECT * FROM fixed_costs", conn)
+        waste_log = pd.read_sql("SELECT * FROM waste_logs", conn)
+        ingredients = pd.read_sql("SELECT * FROM ingredients", conn)
         
-        print(f"✅ Đã chốt số liệu nhân sự và quy đổi doanh thu.")
-        return df
+        conn.close()
+
+        # MERGE DỮ LIỆU: Phải nối thêm bảng pizza_types để lấy tên
+        df = order_details.merge(pizzas, on='pizza_id') \
+                          .merge(orders, on='order_id') \
+                          .merge(pizza_types, on='pizza_type_id') # <-- Lấy tên ở đây
+
+        # Đổi tên cột 'name' từ SQL thành 'pizza_name' để khớp với code pizza_app.py
+        if 'name' in df.columns:
+            df = df.rename(columns={'name': 'pizza_name'})
+
+        df['date'] = pd.to_datetime(df['date'])
+        time_temp = pd.to_datetime(df['time'])
+        df['hour'] = time_temp.dt.hour
+        df['time'] = time_temp.dt.strftime('%H:%M:%S')
+        
+        days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        df['day_name'] = pd.Categorical(df['date'].dt.day_name(), categories=days_order, ordered=True)
+        
+        df['revenue_vnd'] = df['quantity'] * df['price'] * 25000
+        
+        return {
+            'main_df': df,
+            'staff': staff,
+            'shift': shift_log,
+            'fixed': fixed_costs,
+            'waste': waste_log,
+            'ingredients': ingredients
+        }
         
     except Exception as e:
-        print(f" Lỗi trong quá trình xử lý: {e}")
+        print(f"❌ Lỗi: {e}")
         return None
-
-if __name__ == "__main__":
-    # Chạy thử để kiểm tra
-    data = get_cleaned_data()
-    if data is not None:
-        print(data.head())
