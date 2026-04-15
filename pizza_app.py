@@ -19,27 +19,34 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. XỬ LÝ DỮ LIỆU SẠCH (DATA PREPROCESSING) ---
+# --- 2. KHAI BÁO BIẾN TOÀN CỤC (FIX LỖI DAY_MAP) ---
+DAY_MAP = {
+    'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 
+    'Friday': 4, 'Saturday': 5, 'Sunday': 6
+}
+
+# --- 3. XỬ LÝ DỮ LIỆU SẠCH ---
 @st.cache_data
-def load_and_preprocess():
+def load_all_data():
     data_dict = get_cleaned_data()
-    if not data_dict: return None
+    if not data_dict: 
+        return None
+    
     df = data_dict['main_df']
-    
-    # Kỹ thuật lọc: Chỉ lấy giờ mở cửa (10h-23h) để tránh nhiễu số 0
+    # Chỉ lấy khung giờ hoạt động thực tế (10h-23h)
     df = df[(df['hour'] >= 10) & (df['hour'] <= 23)].copy()
-    
-    # Kỹ thuật gộp: Tạo Block 2 giờ để giảm biến động nhỏ
     df['hour_block'] = (df['hour'] // 2) * 2
+    df['day_num'] = df['day_name'].map(DAY_MAP)
     
-    # Label Encoding cho Thứ trong tuần
-    day_map = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
-    df['day_num'] = df['day_name'].map(day_map)
-    return df
+    data_dict['main_df'] = df
+    return data_dict
 
-df = load_and_preprocess()
+data_dict = load_all_data()
 
-if df is not None:
+if data_dict is not None:
+    df = data_dict['main_df']
+    staff_df = data_dict.get('staff')
+
     # --- SIDEBAR ---
     with st.sidebar:
         st.title("🍕 PIZZA AI SOLUTIONS")
@@ -48,97 +55,104 @@ if df is not None:
         st.success("Kết nối SQL: Hoàn tất")
         st.caption("Thai Quang Thang - 2026")
 
-    # --- MODULE 1: DỰ BÁO HIỆU SUẤT (FIX CA GÃY & GIỜ LẺ) ---
+   # --- MODULE 1: DỰ BÁO VẬN HÀNH (HỆ 1 GIỜ - CHUẨN ĐỒ ÁN) ---
     if module == "📊 Dự báo Hiệu suất":
-        st.title("📊 Hệ thống Điều phối Nhân sự & Hiệu suất")
-        
-       # --- MODULE 1: DỰ BÁO HIỆU SUẤT & TÀI CHÍNH (FIXED STAFF) ---
-    if module == "📊 Dự báo Hiệu suất":
-        st.title("📊 Hệ thống Dự báo Doanh thu & Chi phí Nhân sự")
-        st.markdown("💡 **Mục tiêu:** Tính toán sự cân bằng giữa Doanh thu dự báo và Chi phí cố định của 6 nhân sự.")
+        st.title("📊 Quản trị Dự báo & Chuẩn bị theo Giờ")
+        st.markdown("💡 **Cơ chế:** AI dự báo sản lượng theo từng giờ đơn lẻ. Mức đỉnh được lấy từ doanh thu cao nhất lịch sử của giờ đó.")
 
-        # 1. Huấn luyện mô hình (Dự báo Số lượng bánh - Quantity)
-        ml_data = df.groupby(['date', 'hour_block', 'day_num']).agg({'quantity': 'sum'}).reset_index()
-        X_train = ml_data[['hour_block', 'day_num']]
+        # 1. TÍNH GIÁ TRỊ TRUNG BÌNH THỰC TẾ (USD)
+        total_rev_sql = (df['quantity'] * df['price']).sum() 
+        total_qty_sql = df['quantity'].sum()
+        real_aov = total_rev_sql / total_qty_sql 
+
+        # 2. HUẤN LUYỆN RF (DỰ BÁO THEO GIỜ - HOURLY)
+        # Nhóm dữ liệu theo Ngày, Giờ và Thứ
+        ml_data = df.groupby(['date', 'hour', 'day_num']).agg({'quantity': 'sum'}).reset_index()
+        X_train = ml_data[['hour', 'day_num']]
         y_train = ml_data['quantity']
 
         @st.cache_resource
-        def train_model(_X, _y):
+        def train_rf_model(_X, _y):
             model = RandomForestRegressor(n_estimators=100, random_state=42)
             model.fit(_X.values, _y.values)
             return model
+        rf_model = train_rf_model(X_train, y_train)
 
-        rf_model = train_model(X_train, y_train)
-
-        # 2. GIAO DIỆN ĐIỀU KHIỂN
+        # 3. ĐIỀU KHIỂN (Chọn chính xác giờ cần kiểm tra)
         c1, c2 = st.columns(2)
         with c1:
-            t_h = st.slider("Chọn giờ kiểm tra:", 10, 22, 11, step=1)
+            t_h = st.slider("Chọn giờ kiểm tra:", 10, 22, 12, step=1)
         with c2:
-            t_d_name = st.selectbox("Thứ trong tuần:", ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
-            day_map = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
-            t_d_val = day_map[t_d_name]
+            t_d_name = st.selectbox("Thứ trong tuần:", list(DAY_MAP.keys()))
+            t_d_val = DAY_MAP[t_d_name]
 
-        # 3. AI PREDICT & FINANCE LOGIC
-        current_block = (t_h // 2) * 2
-        input_data = pd.DataFrame([[current_block, t_d_val]], columns=['hour_block', 'day_num'])
-        avg_qty = rf_model.predict(input_data.values)[0]
+        # 4. TÍNH TOÁN 2 CHỈ SỐ ĐỘC LẬP THEO GIỜ
+        current_hour = t_h
+        input_data = pd.DataFrame([[current_hour, t_d_val]], columns=['hour', 'day_num'])
         
-        # --- THÔNG SỐ TÀI CHÍNH (GIẢ ĐỊNH THỰC TẾ) ---
-        avg_pizza_price = 16.5  # Giá trung bình 1 cái bánh
-        hourly_wage = 15.0      # Lương trung bình 1 nhân viên/giờ ($)
+        # A. Doanh thu Trung bình (Dự báo AI cho 1 giờ)
+        avg_qty_rf = rf_model.predict(input_data.values)[0]
+        revenue_rf_avg = avg_qty_rf * real_aov
         
-        # Dự báo doanh thu trong block 2 giờ
-        predicted_revenue = avg_qty * avg_pizza_price
-        
-        # Tính chi phí nhân sự cố định cho 6 người trong 2 giờ
-        # Nếu Manager nghỉ ca gãy (14h-17h30), chỉ tính lương cho 5 người
-        is_manager_off = (14 <= t_h <= 17)
-        active_staff_count = 5 if is_manager_off else 6
-        labor_cost = active_staff_count * hourly_wage * 2  # Nhân 2 vì dự báo theo block 2h
-        
-        # Tỉ lệ chi phí nhân công trên doanh thu (Labor Cost %)
-        # Trong F&B, tỉ lệ này đẹp nhất là từ 20% - 30%
-        labor_ratio = (labor_cost / predicted_revenue * 100) if predicted_revenue > 0 else 0
+        # B. Đỉnh doanh thu lịch sử (Lấy Max thực tế của chính GIỜ đó trong quá khứ)
+        hist_data = df[(df['hour'] == current_hour) & (df['day_num'] == t_d_val)]
+        if not hist_data.empty:
+            # Tìm doanh thu cao nhất từng đạt được trong đúng giờ này
+            revenue_peak = hist_data.groupby('date').apply(lambda x: (x['quantity'] * x['price']).sum()).max()
+        else:
+            revenue_peak = revenue_rf_avg * 1.5
 
-        # 4. HIỂN THỊ METRICS TÀI CHÍNH
+        # 5. HIỂN THỊ ĐỐI CHIẾU DOANH THU ($)
         st.divider()
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Dự báo Doanh thu", f"${predicted_revenue:,.2f}", help="Tính dựa trên số bánh AI dự báo")
-        m2.metric("Chi phí Nhân sự (2h)", f"${labor_cost:,.2f}", delta=f"{active_staff_count} người trực")
-        m3.metric("Tỉ lệ Cost/Revenue", f"{labor_ratio:.1f}%", delta_color="inverse", delta="Mục tiêu < 30%")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.metric(f"💰 Doanh thu TB giờ {t_h}h", f"${revenue_rf_avg:,.2f}")
+        with col_m2:
+            st.metric(f"🚀 Đỉnh lịch sử giờ {t_h}h", f"${revenue_peak:,.2f}", 
+                      delta=f"{(revenue_peak/revenue_rf_avg if revenue_rf_avg > 0 else 0):.1f}x so với TB")
 
-        # 5. BẢNG PHÂN CA & TRẠNG THÁI MANAGER
-        col_l, col_r = st.columns([1.5, 1])
-        with col_l:
-            st.subheader(f"📋 Trạng thái ca trực ({t_d_name} - {t_h}:00)")
-            schedule_data = [
-                {"Vị trí": "Manager", "Nhân sự": "Quản lý", "Trạng thái": "💤 Nghỉ ca gãy" if is_manager_off else "✅ Đang làm việc"},
-                {"Vị trí": "Chef 1", "Nhân sự": "Bếp chính", "Trạng thái": "✅ Đang làm việc"},
-                {"Vị trí": "Chef 2", "Nhân sự": "Bếp chính", "Trạng thái": "✅ Đang làm việc"},
-                {"Vị trí": "Kitchen Staff", "Nhân sự": "Phụ bếp", "Trạng thái": "✅ Đang làm việc"},
-                {"Vị trí": "Waiter 1", "Nhân sự": "Phục vụ", "Trạng thái": "✅ Đang làm việc"},
-                {"Vị trí": "Waiter 2", "Nhân sự": "Phục vụ", "Trạng thái": "✅ Đang làm việc"}
-            ]
-            st.table(pd.DataFrame(schedule_data))
+        # 6. DANH MỤC NGUYÊN LIỆU (PREP-LIST HOURLY)
+        st.divider()
+        st.subheader(f"👨‍🍳 Danh mục chuẩn bị cho khung {t_h}h - {t_h+1}h")
+        
+        ingredients_df = data_dict.get('ingredients')
+        if ingredients_df is not None:
+            qty_peak_est = revenue_peak / real_aov
+            prep_data = []
+            for _, row in ingredients_df.iterrows():
+                ing_name = row.get('ingredient_name', 'Nguyên liệu')
+                unit = row.get('unit', 'phần')
+                
+                prep_data.append({
+                    "Nguyên liệu (SQL)": ing_name,
+                    "Đơn vị": unit,
+                    "Cần làm (Mức AI)": f"{avg_qty_rf * 1.1:.1f}",
+                    "Chuẩn bị (Mức Đỉnh)": f"{qty_peak_est * 1.1:.1f}",
+                    "Ghi chú": "Sơ chế theo giờ"
+                })
+            st.table(pd.DataFrame(prep_data))
 
-        with col_r:
-            st.subheader("📈 Đánh giá Hiệu suất Tài chính")
-            if labor_ratio > 40:
-                st.error(f"Lương chiếm {labor_ratio:.1f}% doanh thu: Hiệu suất thấp! Quán đang bù lỗ tiền lương.")
-            elif 20 <= labor_ratio <= 35:
-                st.success(f"Tỉ lệ {labor_ratio:.1f}%: Hiệu suất tối ưu. Lợi nhuận gộp tốt.")
-            else:
-                st.warning(f"Tỉ lệ {labor_ratio:.1f}%: Cảnh báo thiếu nhân sự cho lượng khách này!")
+       
+        # 7. NHÂN SỰ (LẤY LƯƠNG $ TỪ SQL)
+        st.divider()
+        st.subheader(f"📋 Bảng điều phối nhân sự ca {t_h}h")
+        if staff_df is not None:
+            staff_df['role_clean'] = staff_df['role'].str.strip().str.lower()
+            wage_map = staff_df.set_index('role_clean')['hourly_rate'].to_dict()
+            
+            roster = ['Manager', 'Chef', 'Chef', 'Kitchen Staff', 'Server', 'Server']
+            is_manager_off = (14 <= t_h <= 17)
+            
+            display_staff = []
+            for r in roster:
+                wage = wage_map.get(r.lower(), 0)
+                status = " Trong ca"
+                if r == 'Manager' and is_manager_off:
+                    status = " Nghỉ ca gãy"; wage = 0
+                display_staff.append({"Vị trí": r, "Lương ($)": f"${wage:.2f}", "Trạng thái": status})
+            st.table(pd.DataFrame(display_staff))
 
-            # Biểu đồ so sánh
-            finance_df = pd.DataFrame({
-                'Loại': ['Doanh thu', 'Chi phí Lương'],
-                'Số tiền ($)': [predicted_revenue, labor_cost]
-            })
-            st.plotly_chart(px.bar(finance_df, x='Loại', y='Số tiền ($)', color='Loại', color_discrete_map={'Doanh thu':'#22c55e', 'Chi phí Lương':'#ef4444'}), use_container_width=True)
-
-    # --- MODULE 2: APRIORI (Giao diện chuẩn Admin) ---
+    # --- MODULE 2: APRIORI (Gợi ý Upsell) ---
     elif module == "🛒 Robot Gợi ý Upsell":
         st.title("🛒 Khai phá Quy luật Mua sắm (MBA)")
         col_res, col_ctrl = st.columns([2.5, 1], gap="large")
@@ -161,8 +175,10 @@ if df is not None:
                     rules['Gợi ý'] = rules['consequents'].apply(lambda x: list(x)[0])
                     st.success(f"Tìm thấy {len(rules)} quy luật!")
                     st.dataframe(rules[['Gốc', 'Gợi ý', 'support', 'confidence', 'lift']], use_container_width=True)
-                else: st.warning("Không tìm thấy quy luật thỏa mãn.")
-            else: st.warning("Vui lòng giảm Support.")
+                else: 
+                    st.warning("Không tìm thấy quy luật thỏa mãn.")
+            else: 
+                st.warning("Vui lòng giảm Support.")
 
     st.divider()
     st.caption("Hệ thống hỗ trợ quyết định vận hành - Thai Quang Thang - ĐH Phương Đông")

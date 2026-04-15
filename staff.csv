@@ -1,0 +1,14 @@
+﻿staff_id,name,role,hourly_rate,status,salary_type,monthly_salary
+1,James Smith,Manager,20.0,Active,Monthly,4000.0
+2,Maria Garcia,Chef,13.0,Active,Monthly,3000.0
+3,David Miller,Chef,13.0,Active,Monthly,2800.0
+4,Liam Brown,Chef,13.0,Active,Monthly,2800.0
+5,Noah Davis,Chef,13.0,Active,Monthly,2800.0
+6,Michael Moore,Kitchen Staff,9.0,Active,Monthly,2000.0
+7,Charlotte White,Kitchen Staff,9.0,Active,Monthly,2000.0
+8,Linda Davis,Server,2.15,Active,Hourly,0.0
+9,Robert Wilson,Server,2.15,Active,Hourly,0.0
+10,Sophia Taylor,Server,2.15,Active,Hourly,0.0
+11,Mason Anderson,Server,2.15,Active,Hourly,0.0
+12,Isabella Thomas,Server,2.15,Active,Hourly,0.0
+13,Ethan Moore,Server,2.15,Active,Hourly,0.0

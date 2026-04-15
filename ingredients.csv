@@ -1,0 +1,28 @@
+﻿ingredient_id,name,unit,unit_price,supplier_id
+1,BBQ Sauce,liter,2.2,1
+2,Thai Spicy Sauce,liter,2.2,1
+3,Alfredo Sauce,liter,2.5,1
+4,Ground Beef,kg,6.5,2
+5,Prosciutto,kg,9.5,2
+6,Chicken Thai Strips,kg,4.5,2
+7,Jalapeños,kg,1.2,3
+8,Spinach,kg,1.2,3
+9,Feta Cheese,kg,5.8,2
+10,Gorgonzola,kg,5.8,2
+11,Corn,kg,1.2,3
+12,Cashews,kg,2.2,3
+13,High Protein Flour,kg,0.65,1
+14,Organic Tomato Paste,liter,2.5,1
+15,Extra Virgin Olive Oil,liter,7.5,1
+16,Mozzarella Shredded,kg,5.2,2
+17,Parmesan Aged,kg,8.0,2
+18,Cheddar Sharp,kg,5.8,2
+19,Premium Pepperoni,kg,6.5,2
+20,Italian Sausage,kg,6.5,2
+21,Smoked Bacon,kg,6.5,2
+22,Grilled Chicken Breast,kg,4.5,2
+23,Fresh Mushrooms,kg,1.5,3
+24,Bell Peppers Mixed,kg,1.5,3
+25,Red Onions,kg,1.5,3
+26,Black Olives,kg,1.5,3
+27,Fresh Pineapple,kg,1.5,3

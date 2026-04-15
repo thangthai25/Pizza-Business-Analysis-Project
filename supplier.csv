@@ -1,0 +1,13 @@
+﻿supplier_id,name,phone,contact_name,address,supplier_type
+1,Sysco Corporation,+1-281-584-1390,Kevin Hourican,"1390 Enclave Pkwy, Houston, TX",Food
+2,US Foods Holding,+1-847-720-8000,Dave Flitman,"9399 W. Higgins Rd, Rosemont, IL",Food
+3,Driscoll’s Berries,+1-831-763-5000,Sarah Miller,"345 Westridge Dr, Watsonville, CA",Food
+4,PepsiCo Inc.,+1-914-253-2000,Ramon Laguarta,"700 Anderson Hill Rd, Purchase, NY",Beverage
+5,Anheuser-Busch,+1-800-342-5283,Brendan Whitworth,"One Busch Pl, St. Louis, MO",Beverage
+6,WestRock Company,+1-770-448-2193,David Sewell,"1000 Abernathy Rd, Atlanta, GA",Packaging
+7,Eco-Products PBC,+1-303-449-1876,Ian Jacobson,"1901 15th St, Boulder, CO",Packaging
+8,Middleby Corporation,+1-847-741-3300,Tim FitzGerald,"1400 Toastmaster Dr, Elgin, IL",Equipment
+9,ServiceMaster,+1-901-597-1400,Joshua Jantz,"150 Peabody Pl, Memphis, TN",Maintenance
+10,Oracle Food & Beverage,+1-800-633-0738,Chris Adams,"2300 Oracle Way, Austin, TX",Technology
+11,Google Ads Services,+1-650-253-0000,AdWords Support,"1600 Amphitheatre Pkwy, Mountain View, CA",Marketing
+12,Con Edison,+1-212-460-4600,Customer Care,"4 Irving Pl, New York, NY",Utilities
