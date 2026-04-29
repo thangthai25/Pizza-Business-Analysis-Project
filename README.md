@@ -66,4 +66,4 @@ Hành động đề xuất: Nếu doanh thu hiện tại đang sát nút điểm
 Dự án cho thấy việc chỉ nhìn vào Doanh thu là một cái bẫy tài chính. Chỉ khi bóc tách được Chi phí nguyên liệu và Chi phí vận hành, cửa hàng mới thực sự kiểm soát được lợi nhuận bền vững. Kết quả cho thấy cửa hàng nên tập trung tối ưu hóa nhóm sản phẩm có biên lợi nhuận cao thay vì chỉ chạy theo doanh số của các dòng Pizza cao cấp nhưng chi phí quá lớn.
 ## 6. ⚙️ Hướng dẫn xem dự án
 1. Clone dự án về máy.
-3.SQL Sever : https://github.com/thangthai25/Pizza-Business-Analysis-Project/blob/main/analysis.sql
+2.SQL Sever : https://github.com/thangthai25/Pizza-Business-Analysis-Project/blob/main/analysis.sql
